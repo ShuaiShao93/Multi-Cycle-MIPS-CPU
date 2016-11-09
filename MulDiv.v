@@ -1,0 +1,99 @@
+module MulDiv(
+    input Clk, Reset,
+    input [31:0] DA, DB,
+    input Start,
+    input MorD,
+    input SorU,
+    input HorL,
+    input MulWrite,
+    output reg Ready,
+    output [31:0] DC);
+    `include "parameter.v"
+    reg [63:0] A, B;
+    reg [31:0] C;
+    reg [31:0] HI, LO;
+    reg [5:0] cycle;
+    reg S;
+    assign DC = (HorL == HorL_H)? HI:
+                (HorL == HorL_L)? LO: 31'b0;
+    always @(posedge Clk) begin
+        if(Reset) begin
+            HI <= 32'b0;
+            LO <= 32'b0;
+            A  <= 64'b0;
+            B  <= 64'b0;
+            C  <= 64'b0;
+            Ready <= 0;
+            cycle <= 6'b0;
+        end
+        else begin
+            if(Start)
+                case(MorD)
+                    MorD_M: begin
+                        case(cycle)
+                            6'b0: begin
+                                A <= (SorU == SorU_S && DA[31])? {32'b0, ~DA + 1} : {32'b0, DA};
+                                B <= 64'b0;
+                                C <= (SorU == SorU_S && DB[31])? ~DB + 1 : DB;
+                                S <= (SorU == SorU_S && DA[31] != DB[31])? 1 : 0;
+                                Ready <= 0;
+                                cycle <= 6'b1;
+                            end
+                            6'd33: begin
+                                {HI, LO} <= S? ~B + 1 : B;
+                                cycle <= 6'b0;
+                                Ready <= 1;
+                            end
+                            default: begin
+                                if(C[0])
+                                    B <= B + A;
+                                A <= A << 1;
+                                C <= C >> 1;
+                                Ready <= 0;
+                                cycle <= cycle + 1;
+                            end
+                        endcase
+                    end
+                    MorD_D: begin
+                        case(cycle)
+                            6'b0: begin
+                                A <= (SorU == SorU_S && DB[31])? {~DB + 1, 32'b0} : {DB, 32'b0};
+                                B <= (SorU == SorU_S && DA[31])? {32'b0, ~DA + 1} : {32'b0, DA};
+                                C <= 32'b0;
+                                S <= (SorU == SorU_S && DA[31] != DB[31])? 1 : 0;
+                                Ready <= 0;
+                                cycle <= 6'b1;
+                            end
+                            6'd34: begin
+                                HI <= S? ~B[31:0] + 1 : B[31:0];
+                                LO <= C;
+                                cycle <= 6'b0;
+                                Ready <= 1;
+                            end
+                            default: begin
+                                if(B < A) begin
+                                    C <= C << 1;
+                                    C[0] <= 0;
+                                end
+                                else begin
+                                    B <= B - A;
+                                    C <= C << 1;
+                                    C[0] <= 1;
+                                end
+                                A <= A >> 1;
+                                Ready <= 0;
+                                cycle <= cycle + 1;
+                            end
+                        endcase
+                    end
+                endcase
+            if(Ready)
+                Ready <= 0;
+        end
+        if(MulWrite)
+            case(HorL)
+                HorL_H: HI <= DA;
+                HorL_L: LO <= DA;
+            endcase
+    end
+endmodule
